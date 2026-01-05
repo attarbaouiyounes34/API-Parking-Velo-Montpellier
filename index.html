@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Analyse Parkings Montpellier</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        p { text-align: center; color: #666; }
+        .chart-container { position: relative; height: 400px; width: 1000px; margin-bottom: 50px; }
+        .footer { text-align: center; margin-top: 20px; font-size: 0.8em; color: #888; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🅿️ Observatoire Mobilité Montpellier</h1>
+    <p>Analyse de l'occupation des parkings Voitures et Vélos (SAE15)</p>
+
+    <h3>1. Taux d'occupation moyen : Voitures vs Vélos</h3>
+    <div class="chart-container">
+        <canvas id="graphGlobal"></canvas>
+    </div>
+
+    <h3>2. Focus : Comparaison Parking vs Vélo (Offre multimodale)</h3>
+    <p>Analyse du fonctionnement du relais voiture/vélo.</p>
+    <div class="chart-container">
+        <canvas id="graphRelais"></canvas>
+    </div>
+
+    <div class="footer">
+        Données issues de l'Open Data Montpellier - Mises à jour toutes les 30 min.
+    </div>
+</div>
+
+<script>
+    // URL du fichier CSV brut sur GitHub (Raw)
+    // ATTENTION : Le script JS lit le fichier CSV qui est dans le même dossier
+    const csvUrl = 'historique_parkings.csv';
+
+    Papa.parse(csvUrl, {
+        download: true,
+        header: true,
+        delimiter: ";", // Important car ton CSV utilise des points-virgules
+        complete: function(results) {
+            traiterDonnees(results.data);
+        },
+        error: function(err) {
+            console.error("Erreur de lecture CSV:", err);
+            alert("Erreur : Impossible de lire le fichier CSV. Vérifiez qu'il existe bien.");
+        }
+    });
+
+    function traiterDonnees(data) {
+        // Variables pour stocker les données temporelles
+        let temps = [];
+        let occupationVoiture = [];
+        let occupationVelo = [];
+        
+        // Dictionnaire pour regrouper par date/heure
+        let parHeure = {};
+
+        data.forEach(ligne => {
+            if (!ligne.Date || !ligne.Heure) return; // Ignorer les lignes vides
+            
+            let cle = ligne.Date + ' ' + ligne.Heure;
+            
+            if (!parHeure[cle]) {
+                parHeure[cle] = { 
+                    v_libres: 0, v_total: 0, 
+                    b_libres: 0, b_total: 0 
+                };
+            }
+
+            let libres = parseInt(ligne.Places_Libres);
+            let total = parseInt(ligne.Places_Totales);
+
+            if (ligne.Type === 'Voiture') {
+                parHeure[cle].v_libres += libres;
+                parHeure[cle].v_total += total;
+            } else if (ligne.Type === 'Velo') {
+                parHeure[cle].b_libres += libres;
+                parHeure[cle].b_total += total;
+            }
+        });
+
+        // Conversion en pourcentages pour le graphique
+        for (let cle in parHeure) {
+            temps.push(cle); // Date et Heure
+            
+            let stats = parHeure[cle];
+            
+            // Calcul % Voiture (Occupé = Total - Libre)
+            let pctVoiture = 0;
+            if (stats.v_total > 0) pctVoiture = ((stats.v_total - stats.v_libres) / stats.v_total) * 100;
+            occupationVoiture.push(pctVoiture.toFixed(1));
+
+            // Calcul % Vélo
+            let pctVelo = 0;
+            if (stats.b_total > 0) pctVelo = ((stats.b_total - stats.b_libres) / stats.b_total) * 100;
+            occupationVelo.push(pctVelo.toFixed(1));
+        }
+
+        creerGraphique(temps, occupationVoiture, occupationVelo);
+    }
+
+    function creerGraphique(labels, dataVoiture, dataVelo) {
+        const ctx = document.getElementById('graphGlobal').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Occupation Parking Voiture (%)',
+                        data: dataVoiture,
+                        borderColor: 'blue',
+                        backgroundColor: 'rgba(0, 0, 255, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Occupation Stations Vélo (%)',
+                        data: dataVelo,
+                        borderColor: 'green',
+                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, max: 100, title: { display: true, text: '% Occupation' } }
+                }
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
