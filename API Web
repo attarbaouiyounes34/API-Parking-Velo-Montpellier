@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Mobilité - Montpellier</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; }
+        #sidebar { width: 350px; background: #fff; padding: 20px; box-shadow: 2px 0 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; z-index: 1000; }
+        #map { flex: 1; }
+        h2 { margin-top: 0; color: #2c3e50; }
+        .stat-box { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #3498db; }
+        .chart-container { flex: 1; min-height: 200px; position: relative; }
+        .legend { font-size: 12px; margin-top: 10px; }
+        .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Parkings Montpellier</h2>
+    <div class="stat-box" id="info-box">
+        <b>Sélectionnez un point sur la carte</b><br>
+        pour voir l'occupation en temps réel et l'historique.
+    </div>
+    <div class="chart-container">
+        <canvas id="occupationChart"></canvas>
+    </div>
+    <div class="legend">
+        <div><span class="dot" style="background:#2ecc71"></span>Voiture (Libre)</div>
+        <div><span class="dot" style="background:#e74c3c"></span>Voiture (Saturé)</div>
+        <div><span class="dot" style="background:#3498db"></span>Station Vélo</div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    // 1. Initialisation de la carte
+    var map = L.map('map').setView([43.610769, 3.876716], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // 2. Coordonnées GPS (Correction des noms CSV <-> KML)
+    // J'ai mappé manuellement les noms de votre CSV vers les coordonnées exactes
+    const locations = {
+        // --- VOITURES ---
+        "Antigone": [43.6087, 3.8888],
+        "Comedie": [43.6085, 3.8797],
+        "Corum": [43.6138, 3.8822],
+        "Europa": [43.6078, 3.8925],
+        "Foch": [43.6107, 3.8765],
+        "Gambetta": [43.6069, 3.8713],
+        "Gare Saint-Roch": [43.6032, 3.8785],
+        "Triangle": [43.6092, 3.8818],
+        "Arc de Triomphe": [43.6110, 3.8732],
+        "Pitot": [43.6122, 3.8701],
+        "Circe": [43.6049, 3.9178],
+        "Garcia Lorca": [43.5909, 3.8907],
+        "Mosson": [43.6162, 3.8196],
+        "Sabines": [43.5838, 3.8602],
+        "Sablassou": [43.6341, 3.9222],
+        "Euromedecine": [43.6389, 3.8277],
+        "Occitanie": [43.6345, 3.8485],
+        "Polygone": [43.6083, 3.8847],
+        "Saint-Roch": [43.6032, 3.8785],
+
+        // --- VÉLOS (Ajout manuel car absents du KML Voitures) ---
+        "Comedie Baudin": [43.6085, 3.8797], // Proche Comédie
+        "Gare Saint-Roch": [43.6032, 3.8785], // Proche Gare
+        "Antigone Centre": [43.6087, 3.8888], // Proche Antigone
+        "Hôtel de Ville": [43.5992, 3.8958],
+        "Corum": [43.6138, 3.8822],
+        "Beaux-Arts": [43.6160, 3.8830],
+        "Louis Blanc": [43.6150, 3.8750],
+        "Odysseum": [43.6049, 3.9178]
+    };
+
+    let chartInstance = null;
+    let csvData = [];
+
+    // 3. Chargement du CSV
+    Papa.parse('historique_parkings.csv', {
+        download: true,
+        header: true,
+        delimiter: ";",
+        skipEmptyLines: true,
+        complete: function(results) {
+            csvData = results.data;
+            afficherCarte(csvData);
+        }
+    });
+
+    function afficherCarte(data) {
+        // On récupère le dernier état connu pour chaque parking
+        let dernierEtat = {};
+        data.forEach(row => {
+            if(row.Nom && row.Type) dernierEtat[row.Nom + "_" + row.Type] = row;
+        });
+
+        // Pour chaque parking connu dans notre liste GPS
+        for (let [nomRef, coords] of Object.entries(locations)) {
+            // On cherche une correspondance dans le CSV (Nom CSV contient Nom GPS ?)
+            let info = Object.values(dernierEtat).find(item => item.Nom && item.Nom.includes(nomRef));
+            
+            if (info) {
+                let libre = parseInt(info.Places_Libres);
+                let total = parseInt(info.Places_Totales);
+                let percent = Math.round(((total - libre) / total) * 100);
+                let type = info.Type; // Voiture ou Velo
+
+                // Couleur dynamique
+                let color = (percent > 85) ? '#e74c3c' : (percent > 60) ? '#f1c40f' : '#2ecc71';
+                if (type === 'Velo') color = '#3498db';
+
+                let marker = L.circleMarker(coords, {
+                    color: color, fillColor: color, fillOpacity: 0.8,
+                    radius: (type === 'Velo' ? 6 : 10)
+                }).addTo(map);
+
+                marker.on('click', () => updateDashboard(info.Nom, type, percent, libre, total));
+            }
+        }
+    }
+
+    function updateDashboard(nom, type, percent, libre, total) {
+        // Mise à jour Textes
+        document.getElementById('info-box').innerHTML = `
+            <h3>${type === 'Velo' ? '🚲' : '🚗'} ${nom}</h3>
+            <p><b>${percent}%</b> d'occupation</p>
+            <p>${libre} places libres / ${total} total</p>
+        `;
+
+        // Mise à jour Graphique
+        let historique = csvData.filter(r => r.Nom === nom && r.Type === type).slice(-50); // 50 derniers points
+        let labels = historique.map(r => r.Heure);
+        let data = historique.map(r => ((r.Places_Totales - r.Places_Libres)/r.Places_Totales)*100);
+
+        let ctx = document.getElementById('occupationChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '% Occupation', data: data,
+                    borderColor: type === 'Velo' ? '#3498db' : '#2c3e50',
+                    fill: true, backgroundColor: 'rgba(0,0,0,0.1)'
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
+        });
+    }
+</script>
+
+</body>
+</html>
