@@ -1,23 +1,33 @@
-# API-Parking-Velo-Montpellier-
-SAE15 : Collecte et analyse des données d'occupation des parkings voitures et vélos (Open Data Montpellier).
+# 🅿️ Observatoire Mobilité Montpellier (SAE 1.05)
 
-# Collecteur de Données de Mobilité - Montpellier (SAE 15)
+> **Projet d'analyse de données : Occupation des Parkings & Vélos** > *IUT de Béziers - R&T - Janvier 2026*
 
-Ce projet a été réalisé dans le cadre de la **SAE 15** (Département R&T). Il s'agit d'un script Python permettant de collecter, traiter et sauvegarder les données d'occupation des parkings et des stations de vélos de la métropole de Montpellier en temps réel.
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![Data](https://img.shields.io/badge/OpenData-Montpellier-green)
+![Status](https://img.shields.io/badge/Maintenu-Oui-success)
 
-## 📋 Description
+## 📋 Contexte de la Mission
 
-L'application interroge les API Open Data de Montpellier pour récupérer :
-1.  **L'occupation des parkings** (OffStreet Parking)
-2.  **La disponibilité des vélos** (Bike Station)
+Mandatés par la **Mairie de Montpellier**, nous avons réalisé une étude double sur l'utilisation des infrastructures de stationnement de la métropole. Ce projet s'inscrit dans la politique de développement de la ville et vise à répondre aux questions stratégiques de Monsieur le Maire concernant :
 
-Les données sont ensuite parsées (analysées) et sauvegardées dans un fichier CSV historique (`historique_parkings.csv`), formaté pour être facilement exploitable sous Excel (séparateur `;`).
+1.  **Le stationnement automobile :** Taux de remplissage, saturation et dimensionnement.
+2.  **Le stationnement cycliste :** Disponibilité des vélos en libre-service.
+3.  **L'intermodalité :** Le bon fonctionnement du relais "Voiture / Vélo" (P+R).
 
-## 🛠️ Prérequis
+## 🎯 Objectifs de l'Analyse
 
-Le projet nécessite **Python 3.x** et la librairie externe `requests`.
+Ce dépôt contient les scripts de collecte, les jeux de données et l'analyse permettant de répondre aux problématiques suivantes :
+* Les parkings sont-ils bien dimensionnés ?
+* Quand saturent-ils ? (Identification des pics d'affluence).
+* Existe-t-il une corrélation entre l'usage de la voiture et celui du vélo ?
+* Quel est l'impact du Tramway sur le choix modal ?
 
-### Installation des dépendances
-Pour installer la librairie nécessaire à la gestion des requêtes HTTP :
-```bash
-pip install requests
+## ⚙️ Architecture Technique
+
+### 1. Collecte Automatisée (`main.py`)
+Le script Python principal interroge l'API **Open Data Montpellier** en temps réel.
+* **Sources de données :**
+    * Flux Parking Voitures (`TAM_MMM_COURS`)
+    * Flux Stations Vélos (`TAM_MMM_VELOMAG`)
+* **Traitement :** Parsing des données brutes, extraction des places libres/totales, calcul du pourcentage d'occupation.
+* **
