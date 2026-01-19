@@ -2,146 +2,249 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Analyse Parkings Montpellier</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Observatoire Mobilité - Données Réelles</title>
+    
+    <script src="data.js"></script> 
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/1.2.1/chartjs-plugin-zoom.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; text-align: center; }
-        p { text-align: center; color: #666; }
-        .chart-container { position: relative; height: 400px; width: 1000px; margin-bottom: 50px; }
-        .footer { text-align: center; margin-top: 20px; font-size: 0.8em; color: #888; }
+        * { box-sizing: border-box; }
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background-color: #f8f9fa; overflow: hidden; }
+        
+        #loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #2c3e50; z-index: 9999;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            color: white; transition: opacity 0.5s ease;
+        }
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #sidebar { width: 380px; background: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 20px rgba(0,0,0,0.1); z-index: 1000; height: 100%; }
+        .header { padding: 20px; background: #2c3e50; color: white; border-bottom: 4px solid #3498db; flex-shrink: 0; }
+        .header h1 { margin: 0; font-size: 1.2rem; font-weight: 800; }
+        .search-container { padding: 15px; border-bottom: 1px solid #eee; flex-shrink: 0; }
+        #search-input { width: 100%; padding: 10px; border: 2px solid #eee; border-radius: 6px; }
+        #parking-list { flex: 1; overflow-y: auto; padding: 10px; }
+        
+        .list-item { padding: 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; background: #fff; border: 1px solid #f0f0f0; transition: all 0.2s; }
+        .list-item:hover { background: #f8f9fa; transform: translateX(2px); }
+        .list-item.active { background: #e8f4fc; border-left: 4px solid #3498db; border-color: #3498db; }
+        .item-name { font-weight: 600; font-size: 0.9rem; color: #34495e; }
+        .item-info { font-size: 0.8rem; color: #7f8c8d; }
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; color: white; min-width: 40px; text-align: center; }
+        .hs-tag { background: #95a5a6; color: white; padding: 2px 5px; border-radius: 4px; font-size: 0.65rem; margin-left: 5px; }
+
+        #map { flex: 1; height: 100%; width: 100%; position: relative; z-index: 1; }
+
+        #detail-panel { 
+            position: absolute; right: 20px; top: 20px; width: 550px; 
+            background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
+            padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); 
+            z-index: 2000; display: none; border: 1px solid rgba(0,0,0,0.05);
+        }
+        .detail-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
+        .big-stat { font-size: 2rem; font-weight: 800; color: #2c3e50; }
+        .chart-wrapper { height: 320px; width: 100%; position: relative; }
+        .btn-reset { margin-top: 10px; padding: 10px; width: 100%; background: #3498db; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-reset:hover { background: #2980b9; }
+        .close-btn { background: none; border: none; font-size: 1.8rem; cursor: pointer; color: #95a5a6; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>🅿️ Observatoire Mobilité Montpellier</h1>
-    <p>Analyse de l'occupation des parkings Voitures et Vélos (SAE15)</p>
-
-    <h3>1. Taux d'occupation moyen : Voitures vs Vélos</h3>
-    <div class="chart-container">
-        <canvas id="graphGlobal"></canvas>
+    <div id="loader">
+        <div class="spinner"></div>
+        <p id="loader-text">Chargement des données...</p>
     </div>
 
-    <h3>2. Focus : Comparaison Parking vs Vélo (Offre multimodale)</h3>
-    <p>Analyse du fonctionnement du relais voiture/vélo.</p>
-    <div class="chart-container">
-        <canvas id="graphRelais"></canvas>
+    <div id="sidebar">
+        <div class="header">
+            <h1>🅿️ Montpellier Mobilité</h1>
+            <p style="margin:5px 0 0; opacity:0.8; font-size:0.85rem;">Données Officielles & Historique</p>
+        </div>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="🔍 Rechercher..." onkeyup="filtrerListe()">
+        </div>
+        <div id="parking-list"></div>
     </div>
 
-    <div class="footer">
-        Données issues de l'Open Data Montpellier - Mises à jour toutes les 30 min.
+    <div id="map"></div>
+
+    <div id="detail-panel">
+        <div class="detail-header">
+            <div>
+                <h2 id="detail-title" style="margin:0;">Nom</h2>
+                <span id="detail-type" style="color:#7f8c8d; font-size:0.8rem; font-weight:bold; letter-spacing:1px;">TYPE</span>
+            </div>
+            <button class="close-btn" onclick="fermerDetail()">×</button>
+        </div>
+        
+        <div style="display:flex; align-items:baseline; gap:10px;">
+            <div class="big-stat" id="detail-percent">--%</div>
+            <div style="color:#7f8c8d;" id="detail-info">--</div>
+        </div>
+        <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
+        <div class="chart-wrapper">
+            <canvas id="historyChart"></canvas>
+        </div>
+        <button class="btn-reset" onclick="resetZoom()">🔄 Réinitialiser le Zoom</button>
     </div>
-</div>
 
 <script>
-    // URL du fichier CSV brut sur GitHub (Raw)
-    // ATTENTION : Le script JS lit le fichier CSV qui est dans le même dossier
-    const csvUrl = 'historique_parkings.csv';
+    var map, markers = [], chartInstance = null;
 
-    Papa.parse(csvUrl, {
-        download: true,
-        header: true,
-        delimiter: ";", // Important car ton CSV utilise des points-virgules
-        complete: function(results) {
-            traiterDonnees(results.data);
-        },
-        error: function(err) {
-            console.error("Erreur de lecture CSV:", err);
-            alert("Erreur : Impossible de lire le fichier CSV. Vérifiez qu'il existe bien.");
+    document.addEventListener("DOMContentLoaded", function() {
+        // 1. Vérification que data.js est bien chargé
+        if (typeof realData === 'undefined') {
+            document.getElementById('loader-text').innerText = "Erreur : Fichier data.js introuvable !";
+            document.getElementById('loader-text').style.color = "#e74c3c";
+            return;
         }
-    });
 
-    function traiterDonnees(data) {
-        // Variables pour stocker les données temporelles
-        let temps = [];
-        let occupationVoiture = [];
-        let occupationVelo = [];
+        // 2. Initialisation Carte
+        map = L.map('map', {zoomControl: false}).setView([43.610769, 3.876716], 13);
+        L.control.zoom({position: 'topright'}).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // 3. Remplissage avec les données de data.js
+        const listContainer = document.getElementById('parking-list');
         
-        // Dictionnaire pour regrouper par date/heure
-        let parHeure = {};
-
-        data.forEach(ligne => {
-            if (!ligne.Date || !ligne.Heure) return; // Ignorer les lignes vides
+        realData.forEach((p, index) => {
+            // Calcul du % actuel (basé sur la dernière valeur connue)
+            let percent = 0;
+            if (p.Total > 0) percent = Math.round(((p.Total - p.Libres) / p.Total) * 100);
             
-            let cle = ligne.Date + ' ' + ligne.Heure;
-            
-            if (!parHeure[cle]) {
-                parHeure[cle] = { 
-                    v_libres: 0, v_total: 0, 
-                    b_libres: 0, b_total: 0 
-                };
-            }
+            let color = getColor(p, percent);
 
-            let libres = parseInt(ligne.Places_Libres);
-            let total = parseInt(ligne.Places_Totales);
+            // Création élément liste
+            let el = document.createElement('div');
+            el.className = 'list-item';
+            el.innerHTML = `
+                <div>
+                    <div class="item-name">${p.Nom} ${p.Status==='HS'?'<span class="hs-tag">HS</span>':''}</div>
+                    <div class="item-info">${p.Type}</div>
+                </div>
+                <div class="badge" style="background:${color}">${percent}%</div>
+            `;
+            el.onclick = () => selectParking(index);
+            listContainer.appendChild(el);
 
-            if (ligne.Type === 'Voiture') {
-                parHeure[cle].v_libres += libres;
-                parHeure[cle].v_total += total;
-            } else if (ligne.Type === 'Velo') {
-                parHeure[cle].b_libres += libres;
-                parHeure[cle].b_total += total;
+            // Création Marker Carte
+            // Si Lat/Lon manquent, on ne met pas de marker pour éviter les erreurs
+            if (p.Lat && p.Lon) {
+                let radius = p.Type === 'Velo' ? 6 : 10;
+                let m = L.circleMarker([p.Lat, p.Lon], {
+                    color: 'white', weight: 1, fillColor: color, fillOpacity: 0.9, radius: radius
+                }).addTo(map);
+                m.bindPopup(`<b>${p.Nom}</b><br>${percent}% Occupation`);
+                m.on('click', () => selectParking(index));
+                
+                markers.push({marker: m, data: p, el: el, percent: percent, color: color});
             }
         });
 
-        // Conversion en pourcentages pour le graphique
-        for (let cle in parHeure) {
-            temps.push(cle); // Date et Heure
-            
-            let stats = parHeure[cle];
-            
-            // Calcul % Voiture (Occupé = Total - Libre)
-            let pctVoiture = 0;
-            if (stats.v_total > 0) pctVoiture = ((stats.v_total - stats.v_libres) / stats.v_total) * 100;
-            occupationVoiture.push(pctVoiture.toFixed(1));
+        // 4. Masquer le loader
+        setTimeout(() => {
+            document.getElementById('loader').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('loader').style.display = 'none';
+                map.invalidateSize();
+            }, 300);
+        }, 500);
+    });
 
-            // Calcul % Vélo
-            let pctVelo = 0;
-            if (stats.b_total > 0) pctVelo = ((stats.b_total - stats.b_libres) / stats.b_total) * 100;
-            occupationVelo.push(pctVelo.toFixed(1));
-        }
+    // --- FONCTIONS ---
+    function selectParking(index) {
+        let obj = markers[index];
+        let p = obj.data; // C'est ici qu'on récupère l'objet complet avec l'historique
 
-        creerGraphique(temps, occupationVoiture, occupationVelo);
-    }
+        // UI Updates
+        document.querySelectorAll('.list-item').forEach(e => e.classList.remove('active'));
+        obj.el.classList.add('active');
+        obj.el.scrollIntoView({behavior: "smooth", block: "center"});
+        map.flyTo([p.Lat, p.Lon], 15);
 
-    function creerGraphique(labels, dataVoiture, dataVelo) {
-        const ctx = document.getElementById('graphGlobal').getContext('2d');
-        new Chart(ctx, {
+        document.getElementById('detail-panel').style.display = 'block';
+        document.getElementById('detail-title').innerText = p.Nom;
+        document.getElementById('detail-type').innerText = p.Type.toUpperCase();
+        document.getElementById('detail-percent').innerText = obj.percent + '%';
+        document.getElementById('detail-percent').style.color = obj.color;
+        document.getElementById('detail-info').innerText = `${p.Libres} places libres / ${p.Total}`;
+
+        // GRAPHIQUE : On lit directement les tableaux générés par Python
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Occupation Parking Voiture (%)',
-                        data: dataVoiture,
-                        borderColor: 'blue',
-                        backgroundColor: 'rgba(0, 0, 255, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Occupation Stations Vélo (%)',
-                        data: dataVelo,
-                        borderColor: 'green',
-                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }
-                ]
+                labels: p.History.Labels, // Dates fournies par Python
+                datasets: [{
+                    label: '% Occupation',
+                    data: p.History.Data, // Valeurs fournies par Python
+                    borderColor: obj.color,
+                    backgroundColor: obj.color + '10',
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    tension: 0.2
+                }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 scales: {
-                    y: { beginAtZero: true, max: 100, title: { display: true, text: '% Occupation' } }
+                    x: { 
+                        ticks: { maxTicksLimit: 6, maxRotation: 0 },
+                        title: { display: true, text: '📅 Date & Heure' }
+                    },
+                    y: { 
+                        beginAtZero: true, max: 100,
+                        title: { display: true, text: '📈 Taux d\'occupation (%)' }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    zoom: {
+                        pan: { enabled: true, mode: 'x' },
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+                    }
                 }
             }
         });
     }
-</script>
 
+    function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
+    
+    function getColor(p, percent) {
+        if (p.Status === 'HS') return '#95a5a6';
+        if (p.Type === 'Velo' || p.Type === 'Velo') return '#3498db'; // Gère "Velo" et "Vélo"
+        if (percent > 90) return '#e74c3c';
+        if (percent > 70) return '#f1c40f';
+        return '#2ecc71';
+    }
+
+    function fermerDetail() { document.getElementById('detail-panel').style.display = 'none'; }
+
+    function filtrerListe() {
+        let val = document.getElementById('search-input').value.toLowerCase();
+        markers.forEach(obj => {
+            let visible = obj.data.Nom.toLowerCase().includes(val);
+            obj.el.style.display = visible ? 'flex' : 'none';
+            if(visible) obj.marker.addTo(map); else obj.marker.remove();
+        });
+    }
+</script>
 </body>
 </html>
