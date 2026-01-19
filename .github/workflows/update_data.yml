@@ -1,0 +1,38 @@
+name: Mise à jour Automatique
+
+on:
+  schedule:
+    - cron: '0,30 * * * *' # Toutes les 30 min
+  workflow_dispatch: # Pour lancer à la main si besoin
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupération du code
+        uses: actions/checkout@v3
+
+      - name: Installation Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Installation Pandas/Requests
+        run: pip install pandas requests
+
+      - name: 1. Collecte des données (CSV)
+        run: python main.py
+
+      - name: 2. Génération du site (JS)
+        run: python generateur_site.py
+
+      - name: Sauvegarde sur GitHub
+        run: |
+          git config --global user.name "Robot Mobilité"
+          git config --global user.email "robot@github.com"
+          git add historique_parkings.csv data.js
+          git commit -m "Auto Update" || echo "Rien à changer"
+          git push
